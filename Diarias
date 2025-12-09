@@ -1,90 +1,25 @@
 
-import streamlit as st
-from datetime import datetime, date
-import pandas as pd
+from flask import Flask, request, jsonify
+from datetime import datetime
 
-st.set_page_config(page_title="Diárias UTI", page_icon="🩺", layout="centered")
-
-st.title("🩺 Cálculo de Diárias de UTI (inclusivo)")
-st.caption("Conta entrada e dia da alta. Formato de data: dd/mm/aaaa.")
+app = Flask(__name__)
 
 def diarias_uti(inicio, fim):
-    """
-    Calcula diárias de UTI incluindo dia de entrada e dia da alta.
-    Aceita strings 'dd/mm/aaaa' ou objetos date/datetime.
-    """
-    def _to_date(d):
-        if isinstance(d, date):
-            return d
-        if isinstance(d, str):
-            return datetime.strptime(d.strip(), "%d/%m/%Y").date()
-        raise TypeError("Use str ('dd/mm/aaaa') ou objetos date/datetime.")
-    ini = _to_date(inicio)
-    end = _to_date(fim)
+    ini = datetime.strptime(inicio, "%d/%m/%Y").date()
+    end = datetime.strptime(fim, "%d/%m/%Y").date()
     if end < ini:
-        raise ValueError("Alta anterior à entrada. Verifique as datas.")
-    return (end - ini).days + 1
+        return {"erro": "Alta anterior à entrada"}, 400
+    return {"diarias": (end - ini).days + 1}
 
-tab1, tab2 = st.tabs(["Cálculo rápido", "Lista de internações"])
+@app.route("/calcular", methods=["POST"])
+def calcular():
+    data = request.get_json()
+    inicio = data.get("inicio")
+    fim = data.get("fim")
+    result = diarias_uti(inicio, fim)
+    if isinstance(result, tuple):
+        return jsonify(result[0]), result[1]
+    return jsonify(result)
 
-with tab1:
-    col1, col2 = st.columns(2)
-    with col1:
-        data_in = st.date_input("Data de entrada", format="DD/MM/YYYY", value=None)
-    with col2:
-        data_out = st.date_input("Data de alta", format="DD/MM/YYYY", value=None)
-
-    if st.button("Calcular diárias", type="primary"):
-        if not data_in or not data_out:
-            st.warning("Informe ambas as datas.")
-        else:
-            try:
-                qtd = diarias_uti(data_in, data_out)
-                st.success(f"Entre {data_in.strftime('%d/%m/%Y')} e {data_out.strftime('%d/%m/%Y')} são **{qtd} diárias** (inclusivo).")
-            except Exception as e:
-                st.error(str(e))
-
-with tab2:
-    st.write("Importe uma planilha com colunas **Entrada** e **Alta** (formato dd/mm/aaaa).")
-    arquivo = st.file_uploader("Carregar arquivo (CSV ou Excel)", type=["csv", "xlsx"])
-    if arquivo:
-        # Detecta formato e lê
-        if arquivo.name.lower().endswith(".csv"):
-            df = pd.read_csv(arquivo, dtype=str)
-        else:
-            df = pd.read_excel(arquivo, engine="openpyxl", dtype=str)
-
-        # Normaliza nomes
-        df.columns = [c.strip() for c in df.columns]
-        if not {"Entrada", "Alta"}.issubset(set(df.columns)):
-            st.error("A planilha deve ter colunas 'Entrada' e 'Alta'.")
-        else:
-            # Converte e calcula
-            def parse_br(s):
-                return datetime.strptime(s.strip(), "%d/%m/%Y").date()
-
-            try:
-                df["Entrada_date"] = df["Entrada"].apply(parse_br)
-                df["Alta_date"] = df["Alta"].apply(parse_br)
-                df["Diárias"] = df.apply(
-                    lambda r: diarias_uti(r["Entrada_date"], r["Alta_date"]), axis=1
-                )
-                # Exibe
-                st.dataframe(df[["Entrada", "Alta", "Diárias"]], use_container_width=True)
-
-                # Exporta para Excel
-                buffer = df[["Entrada", "Alta", "Diárias"]].copy()
-                buffer.columns = ["Entrada (dd/mm/aaaa)", "Alta (dd/mm/aaaa)", "Diárias (inclusivo)"]
-                xlsx = buffer.to_excel(index=False, engine="openpyxl")
-                # O to_excel direto em df retorna None; vamos usar BytesIO:
-                import io
-                output = io.BytesIO()
-                buffer.to_excel(output, index=False, engine="openpyxl")
-                st.download_button(
-                    label="⬇️ Baixar resultados (Excel)",
-                    data=output.getvalue(),
-                    file_name="diarias_uti.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            except Exception as e:
-
+if __name__ == "__main__":
+    app.run(debug=True)
