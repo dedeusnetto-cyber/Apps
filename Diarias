@@ -1,0 +1,17 @@
+
+from datetime import datetime
+
+def diarias_uti_com_hora(inicio_str, fim_str):
+    """
+    Recebe strings como 'dd/mm/aaaa HH:MM' e calcula diárias ignorando o horário.
+    """
+    ini = datetime.strptime(inicio_str.strip(), "%d/%m/%Y %H:%M").date()
+    end = datetime.strptime(fim_str.strip(), "%d/%m/%Y %H:%M").date()
+
+    if end < ini:
+        raise ValueError("Data de alta anterior à data de entrada. Verifique as datas.")
+
+    return (end - ini).days + 1
+
+# Exemplo:
+print(diarias_uti_com_hora("24/11/2025 14:30", "04/12/2025 09:10"))  # -> 11
